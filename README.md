@@ -14,15 +14,22 @@ Redis. Frontend: React, served on port 9095.
 
 ## Modes
 
-- **Interactive** (`/`) — browse `INTERACTIVE_DIR`, multi-select files, enqueue them for
-  conversion. Status is stored in Redis so it survives page navigation/reloads. The red
-  **STOP ALL** button kills any in-flight conversion and clears the interactive queue.
+- **Interactive** (`/`) — browse any of the three configured folders (Interactive,
+  Movies, Series) via tabs, multi-select files, enqueue them for conversion. Each
+  folder's read/write permissions are checked live and surfaced as a warning if
+  something's misconfigured. Status is stored in Redis so it survives page
+  navigation/reloads. The red **STOP ALL** button kills any in-flight conversion and
+  clears the interactive queue.
 - **Batch** (`/batch`) — disabled by default. Enable for either Movies (top 5 files over
-  1.5GB in `MOVIE_DIR`) or Series (largest series folder in `SERIES_DIR`, one season per
-  night) — mutually exclusive. Runs nightly 2:00–5:00 AM `TZ` (default
-  `America/Denver`). Shows tonight's queue and a persistent conversion log.
-- **Settings** (`/settings`) — choose the HandBrake preset (default `Fast 720p30`);
-  configured folders are shown read-only (set via `.env`).
+  1.5GB in `MOVIE_DIR`) or Series (largest `Season NN` folder found anywhere under
+  `SERIES_DIR`, one season per night, rotating through folders already converted) —
+  mutually exclusive. Runs nightly during a configurable window (default 1:30–5:30 AM
+  `TZ`, default `America/Denver`; change it from Settings — takes effect immediately,
+  no restart needed). Shows a live preview of tonight's pick before the window opens,
+  and a persistent conversion log afterward.
+- **Settings** (`/settings`) — choose the HandBrake preset (default `Fast 720p30`) and
+  the nightly batch start/stop time; configured folders are shown read-only (set via
+  `.env`).
 
 Converted files are written back into the same folder the source file was picked up
 from, with any `[...]` tag in the filename stripped and replaced with `[<preset name>]`.
