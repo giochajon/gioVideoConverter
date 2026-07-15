@@ -18,7 +18,10 @@ A self-hosted, dockerized video transcoder built on headless HandBrakeCLI:
   `SERIES_DIR`, regardless of category/show nesting) — mutually exclusive. Runs
   nightly during a configurable window, default **1:30–5:30 AM** `TZ` (default
   `America/Denver`), changeable live from Settings. Shows a live preview of tonight's
-  pick (even before the window opens) plus a persistent JSONL conversion log.
+  pick (even before the window opens) plus a persistent JSONL conversion log. A
+  toggle switches between the **Queued** view and the **Recently Processed** (log)
+  view — never shown mixed — and each item/entry in either view can be removed
+  individually.
 - **Settings** (`/settings`) — HandBrake preset picker (default `Fast 720p30`, built
   from `HandBrakeCLI --preset-list`), nightly batch start/stop time pickers; the three
   folders are shown read-only (set via `.env`).
@@ -113,6 +116,46 @@ the original handoff turned up actual bugs, which is exactly what it was for.
    to `requirements.txt` (lighter-weight than adding OS-level `tzdata` via apt, and
    doesn't touch the already-fragile Dockerfile apt chain).
 
+## Bugs found and fixed during real-world usage (second round)
+
+These turned up from actually running the app against a live library for a while,
+after everything above had already been verified once.
+
+8. **Batch queue could get duplicate entries** — `enqueue_batch`/`enqueue_interactive`
+   had no de-duplication at all: nothing stopped the nightly movie-batch builder (no
+   season-style progress tracking like series has) from re-adding a file that was
+   still sitting unprocessed in the queue from a previous night. Fixed by checking
+   every path already queued or actively transcoding (across both queues) before
+   creating a new job for it, so the same source file can never end up queued twice.
+9. **Nightly scan could re-pick already-converted files** — `scanner.list_movies()`
+   and `scanner.episodes_of()` only filtered by size/episode-pattern, with no check for
+   whether a file had already been converted. A successfully converted file is renamed
+   with a trailing `[<preset name>]` tag (see `renamer.strip_and_tag`), but nothing
+   used that signal — relying on the post-conversion size drop alone to keep a movie
+   under the re-batch threshold is not reliable for large sources. Fixed by adding
+   `scanner.is_already_converted()` (matches the trailing `[...]` tag) and excluding
+   those files from both the movie and series batch scans.
+10. **Interactive-mode conversions never appeared in the conversion log** —
+    `_process_job` only called `batch_logger.append_entry(...)` `if mode == "batch"`,
+    so a file converted from the Interactive page (browsing Movies/Series/Interactive
+    tabs and clicking "Enqueue Selected") completed successfully but was invisible in
+    `/batch`'s Conversion Log — confirmed live with a real file
+    (`The.Muse.1999...mkv`, processed via Interactive mode, absent from
+    `batch_log.jsonl`). Fixed by logging every finished conversion regardless of mode;
+    the historical entry for that file was backfilled manually from its still-present
+    Redis job data.
+11. **Log entries had no finish time or duration** — only `started_at` was recorded.
+    Added `finished_at` and a computed `duration_seconds` to every log entry (backend
+    `batch_logger.append_entry` and model), surfaced as "Finished" and "Duration"
+    columns in the Conversion Log table.
+12. **No way to view queue and history separately, or remove individual items** — the
+    Batch page always showed "Tonight's Queue" and "Conversion Log" stacked together.
+    Added a Queued/Recently Processed toggle (mutually exclusive views) plus a
+    per-row "Remove" button on each, backed by two new endpoints:
+    `DELETE /api/batch/queue/{job_id}` (`queue_manager.remove_batch_job`) and
+    `POST /api/batch/log/remove` (`batch_logger.remove_entry`, matched by the entry's
+    unique `started_at`).
+
 ## Known limitations (not bugs, just current scope)
 
 - Series batch rotation only considers shows organized with a `Season NN` subfolder;
@@ -148,9 +191,29 @@ the original handoff turned up actual bugs, which is exactly what it was for.
   `status`), readable via `/api/batch/log`.
 - No leftover test containers/networks at any point.
 
+### Second round (bugs 8–12 above)
+
+- Dedup: re-enqueueing a path already sitting in `queue:batch` against the live
+  container was confirmed to be a no-op (queue length unchanged).
+- Already-converted filter: unit-checked against real filenames from the live
+  library (tagged episodes/movies correctly excluded, untagged ones correctly kept).
+- Logging fix: confirmed live that an Interactive-mode job (`The.Muse.1999...mkv`)
+  was missing from `batch_log.jsonl`; after the fix, `/api/batch/log` includes it
+  (backfilled once from its still-present Redis job hash) with `finished_at` and
+  `duration_seconds` populated.
+- Remove endpoints: `DELETE /api/batch/queue/{job_id}` and `POST /api/batch/log/remove`
+  both exercised against the live queue/log and confirmed to remove exactly the
+  targeted item.
+- Frontend: `tsc -b && vite build` and the full Docker image build both succeed with
+  no errors.
+
 ## Current live state (informational — will drift over time)
 
 At the time of this update: batch mode is **enabled**, target **series**, window
-**01:30–05:30** (`TZ=America/Denver`). The next nightly run will pick up wherever the
-Season-folder rotation left off. Check `/api/batch/tonight` for a live preview of the
-current pick, and `/api/batch/log` for conversion history.
+**01:30–05:30** (`TZ=America/Denver`), currently working through `El Chema` Season 1
+(84 episodes; ~9 converted so far, the rest queued). The next nightly run will pick up
+wherever the Season-folder rotation left off. Check `/api/batch/tonight` for a live
+preview of the current pick, and `/api/batch/log` for conversion history. The bugs-8–12
+fixes above have been built, deployed to the running container, and verified against
+this live queue/log — no in-flight conversion was interrupted (both restarts happened
+between jobs).

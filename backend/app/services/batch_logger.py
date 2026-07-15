@@ -7,10 +7,20 @@ from ..config import settings
 _LOG_PATH = os.path.join(settings.log_dir, "batch_log.jsonl")
 
 
-def append_entry(started_at: str, filename: str, initial_size: int, final_size: int | None, status: str) -> None:
+def append_entry(
+    started_at: str,
+    finished_at: str,
+    filename: str,
+    initial_size: int,
+    final_size: int | None,
+    status: str,
+) -> None:
     os.makedirs(settings.log_dir, exist_ok=True)
+    duration_seconds = (datetime.fromisoformat(finished_at) - datetime.fromisoformat(started_at)).total_seconds()
     entry = {
         "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_seconds": duration_seconds,
         "filename": filename,
         "initial_size": initial_size,
         "final_size": final_size,
@@ -28,6 +38,25 @@ def read_entries(limit: int = 200) -> list[dict]:
     entries = [json.loads(line) for line in lines[-limit:]]
     entries.reverse()
     return entries
+
+
+def remove_entry(started_at: str) -> bool:
+    """Remove the single log entry with this started_at timestamp (unique per job)."""
+    if not os.path.exists(_LOG_PATH):
+        return False
+    with open(_LOG_PATH) as f:
+        lines = f.readlines()
+    kept = []
+    removed = False
+    for line in lines:
+        if not removed and json.loads(line).get("started_at") == started_at:
+            removed = True
+            continue
+        kept.append(line)
+    if removed:
+        with open(_LOG_PATH, "w") as f:
+            f.writelines(kept)
+    return removed
 
 
 def now_iso() -> str:

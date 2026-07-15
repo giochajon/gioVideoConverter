@@ -131,11 +131,31 @@ def _validate_source_path(path: str) -> None:
     raise ValueError(f"path is outside the configured folders: {path}")
 
 
+async def _pending_source_paths() -> set[str]:
+    """Source paths that are already queued or actively processing, across both
+    queues - used to keep the same file from ever being enqueued twice."""
+    paths: set[str] = set()
+    for queue_key in (QUEUE_INTERACTIVE, QUEUE_BATCH):
+        for job_id in await _redis.lrange(queue_key, 0, -1):
+            path = await _redis.hget(f"job:{job_id}", "source_path")
+            if path:
+                paths.add(path)
+    if _current_job_id is not None:
+        path = await _redis.hget(f"job:{_current_job_id}", "source_path")
+        if path:
+            paths.add(path)
+    return paths
+
+
 async def enqueue_interactive(paths: list[str]) -> list[str]:
     current = await get_settings()
+    pending = await _pending_source_paths()
     job_ids = []
     for path in paths:
         _validate_source_path(path)
+        if path in pending:
+            continue
+        pending.add(path)
         job_id = await _create_job("interactive", path, current["preset"])
         await _redis.rpush(QUEUE_INTERACTIVE, job_id)
         job_ids.append(job_id)
@@ -143,12 +163,23 @@ async def enqueue_interactive(paths: list[str]) -> list[str]:
 
 
 async def enqueue_batch(paths: list[str], preset: str) -> list[str]:
+    pending = await _pending_source_paths()
     job_ids = []
     for path in paths:
+        if path in pending:
+            continue
+        pending.add(path)
         job_id = await _create_job("batch", path, preset)
         await _redis.rpush(QUEUE_BATCH, job_id)
         job_ids.append(job_id)
     return job_ids
+
+
+async def remove_batch_job(job_id: str) -> bool:
+    removed = await _redis.lrem(QUEUE_BATCH, 0, job_id)
+    if removed:
+        await _redis.delete(f"job:{job_id}")
+    return bool(removed)
 
 
 async def get_status() -> dict:
@@ -205,7 +236,6 @@ async def _process_job(job_id: str) -> None:
     job = await _redis.hgetall(job_key)
     source_path = job["source_path"]
     preset = job["preset"]
-    mode = job["mode"]
 
     if not os.path.exists(source_path):
         await _redis.hset(job_key, mapping={"status": "failed", "error": "source file not found"})
@@ -241,9 +271,9 @@ async def _process_job(job_id: str) -> None:
                 return
             logger.exception("job %s crashed mid-transcode", job_id)
             error = f"{type(exc).__name__}: {exc}"
-            await _redis.hset(job_key, mapping={"status": "failed", "error": error, "finished_at": _now()})
-            if mode == "batch":
-                batch_logger.append_entry(started_at, os.path.basename(source_path), initial_size, None, "failed")
+            finished_at = _now()
+            await _redis.hset(job_key, mapping={"status": "failed", "error": error, "finished_at": finished_at})
+            batch_logger.append_entry(started_at, finished_at, os.path.basename(source_path), initial_size, None, "failed")
             await _set_halted(job_id, error)
             return
     finally:
@@ -262,23 +292,23 @@ async def _process_job(job_id: str) -> None:
         if os.path.exists(tmp_dest):
             os.remove(tmp_dest)
         error = result.stderr_tail if result else "process did not complete"
-        await _redis.hset(job_key, mapping={"status": "failed", "error": error, "finished_at": _now()})
-        if mode == "batch":
-            batch_logger.append_entry(started_at, os.path.basename(source_path), initial_size, None, "failed")
+        finished_at = _now()
+        await _redis.hset(job_key, mapping={"status": "failed", "error": error, "finished_at": finished_at})
+        batch_logger.append_entry(started_at, finished_at, os.path.basename(source_path), initial_size, None, "failed")
         await _set_halted(job_id, error)
         return
 
     os.replace(tmp_dest, dest_path)
     os.remove(source_path)
     final_size = os.path.getsize(dest_path)
+    finished_at = _now()
     await _redis.hset(job_key, mapping={
         "status": "done",
         "progress": "100",
         "final_size": str(final_size),
-        "finished_at": _now(),
+        "finished_at": finished_at,
     })
-    if mode == "batch":
-        batch_logger.append_entry(started_at, os.path.basename(dest_path), initial_size, final_size, "done")
+    batch_logger.append_entry(started_at, finished_at, os.path.basename(dest_path), initial_size, final_size, "done")
 
 
 async def _worker_loop() -> None:

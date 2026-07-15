@@ -55,6 +55,8 @@ export type RootsResponse = Record<BrowseRoot, RootInfo>;
 
 export interface BatchLogEntry {
   started_at: string;
+  finished_at?: string;
+  duration_seconds?: number;
   filename: string;
   initial_size: number;
   final_size: number | null;
@@ -102,6 +104,14 @@ export const api = {
   presets: () => fetch("/api/settings/presets").then((r) => json<string[]>(r)),
   batchTonight: () => fetch("/api/batch/tonight").then((r) => json<TonightResponse>(r)),
   batchLog: () => fetch("/api/batch/log").then((r) => json<BatchLogEntry[]>(r)),
+  removeBatchQueueItem: (jobId: string) =>
+    fetch(`/api/batch/queue/${encodeURIComponent(jobId)}`, { method: "DELETE" }).then((r) => json(r)),
+  removeBatchLogEntry: (startedAt: string) =>
+    fetch("/api/batch/log/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ started_at: startedAt }),
+    }).then((r) => json(r)),
 };
 
 export function formatBytes(bytes?: string | number): string {

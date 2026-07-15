@@ -65,7 +65,13 @@ class SettingsResponse(BaseModel):
 
 class BatchLogEntry(BaseModel):
     started_at: str
+    finished_at: Optional[str] = None
+    duration_seconds: Optional[float] = None
     filename: str
     initial_size: int
     final_size: Optional[int] = None
     status: str
+
+
+class RemoveLogEntryRequest(BaseModel):
+    started_at: str

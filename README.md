@@ -25,15 +25,20 @@ Redis. Frontend: React, served on port 9095.
   `SERIES_DIR`, one season per night, rotating through folders already converted) —
   mutually exclusive. Runs nightly during a configurable window (default 1:30–5:30 AM
   `TZ`, default `America/Denver`; change it from Settings — takes effect immediately,
-  no restart needed). Shows a live preview of tonight's pick before the window opens,
-  and a persistent conversion log afterward.
+  no restart needed). A toggle switches between **Queued** (what's waiting to be
+  processed, with a "Remove" button per item) and **Recently Processed** (the
+  conversion log, also removable per entry) — the two are never shown mixed together.
+  The nightly scan never re-queues a file that's already queued/running elsewhere, or
+  one that's already been converted (identified by its `[<preset name>]` tag).
 - **Settings** (`/settings`) — choose the HandBrake preset (default `Fast 720p30`) and
   the nightly batch start/stop time; configured folders are shown read-only (set via
   `.env`).
 
 Converted files are written back into the same folder the source file was picked up
 from, with any `[...]` tag in the filename stripped and replaced with `[<preset name>]`.
-The original file is deleted after a successful conversion.
+The original file is deleted after a successful conversion. Every finished conversion —
+interactive or batch — is recorded in the persistent log with its start time, finish
+time, and duration.
 
 If a conversion fails, processing halts immediately, the queue is left untouched for
 review, and batch mode is auto-disabled. Use the "Resume" button (or `/batch` toggle)
