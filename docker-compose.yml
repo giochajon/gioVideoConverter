@@ -1,0 +1,31 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-9095}:9095"
+    environment:
+      MOVIE_DIR: /media/movies
+      SERIES_DIR: /media/series
+      INTERACTIVE_DIR: /media/interactive
+      LOG_DIR: /logs
+      TZ: ${TZ:-America/Denver}
+      DEFAULT_PRESET: ${DEFAULT_PRESET:-Fast 720p30}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ${MOVIE_DIR}:/media/movies
+      - ${SERIES_DIR}:/media/series
+      - ${INTERACTIVE_DIR}:/media/interactive
+      - ${LOG_DIR}:/logs
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  redis-data:
