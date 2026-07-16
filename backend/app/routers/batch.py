@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..config import settings
+from ..models import RemoveLogEntryRequest
 from ..services import batch_logger, queue_manager, scanner, scheduler
 
 router = APIRouter(prefix="/api/batch", tags=["batch"])
@@ -36,6 +37,22 @@ async def tonight():
     return {"queued": False, "jobs": preview}
 
 
+@router.delete("/queue/{job_id}")
+async def remove_queue_item(job_id: str):
+    ok = await queue_manager.remove_batch_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="job not found in the batch queue")
+    return {"ok": True}
+
+
 @router.get("/log")
 async def log(limit: int = 200):
     return batch_logger.read_entries(limit)
+
+
+@router.post("/log/remove")
+async def remove_log_entry(req: RemoveLogEntryRequest):
+    ok = batch_logger.remove_entry(req.started_at)
+    if not ok:
+        raise HTTPException(status_code=404, detail="log entry not found")
+    return {"ok": True}
