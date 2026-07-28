@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, HTTPException
 
 from ..config import settings
@@ -56,3 +58,10 @@ async def remove_log_entry(req: RemoveLogEntryRequest):
     if not ok:
         raise HTTPException(status_code=404, detail="log entry not found")
     return {"ok": True}
+
+
+@router.post("/log/prune")
+async def prune_log():
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    removed = batch_logger.remove_older_than(cutoff)
+    return {"removed": removed}

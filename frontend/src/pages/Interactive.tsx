@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, BrowseResponse, BrowseRoot, RootsResponse, StatusResponse, formatBytes } from "../api";
+import { api, BatchLogEntry, BrowseResponse, BrowseRoot, RootsResponse, StatusResponse, formatBytes } from "../api";
 
 const ROOT_LABELS: Record<BrowseRoot, string> = {
   interactive: "Interactive",
   movies: "Movies",
   series: "Series",
 };
+
+function formatDuration(seconds?: number): string {
+  if (seconds == null) return "-";
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 export default function Interactive() {
   const [root, setRoot] = useState<BrowseRoot>("interactive");
@@ -16,6 +27,8 @@ export default function Interactive() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"queue" | "log">("queue");
+  const [log, setLog] = useState<BatchLogEntry[]>([]);
 
   const loadBrowse = useCallback((forRoot: BrowseRoot, path: string) => {
     setLoading(true);
@@ -38,12 +51,22 @@ export default function Interactive() {
     api.roots().then(setRoots).catch(() => {});
   }, []);
 
+  const loadLog = useCallback(() => {
+    api.batchLog().then(setLog).catch(() => {});
+  }, []);
+
   useEffect(() => {
     loadRoots();
     loadStatus();
     const interval = setInterval(loadStatus, 2000);
     return () => clearInterval(interval);
   }, [loadRoots, loadStatus]);
+
+  useEffect(() => {
+    loadLog();
+    const interval = setInterval(loadLog, 5000);
+    return () => clearInterval(interval);
+  }, [loadLog]);
 
   useEffect(() => {
     loadBrowse(root, "");
@@ -80,6 +103,17 @@ export default function Interactive() {
   async function resume() {
     await api.resume();
     loadStatus();
+  }
+
+  async function removeLogEntry(startedAt: string) {
+    await api.removeBatchLogEntry(startedAt);
+    loadLog();
+  }
+
+  async function pruneLog() {
+    if (!confirm("Delete all log entries older than one week?")) return;
+    await api.pruneBatchLog();
+    loadLog();
   }
 
   const parts = cwd.split("/").filter(Boolean);
@@ -181,38 +215,88 @@ export default function Interactive() {
         </div>
       </div>
 
-      <div className="panel">
-        <h2>Queue &amp; Status</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>File</th>
-              <th>Mode</th>
-              <th>Status</th>
-              <th>Progress</th>
-              <th>Size</th>
-            </tr>
-          </thead>
-          <tbody>
-            {status?.jobs.map((j) => (
-              <tr key={j.id}>
-                <td>{j.source_path.split("/").pop()}</td>
-                <td>{j.mode}</td>
-                <td><span className={`badge ${j.status}`}>{j.status}</span></td>
-                <td>
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${Number(j.progress || 0)}%` }} />
-                  </div>
-                </td>
-                <td>
-                  {formatBytes(j.initial_size)}
-                  {j.final_size ? ` → ${formatBytes(j.final_size)}` : ""}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="root-tabs">
+        <button className={view === "queue" ? "primary" : ""} onClick={() => setView("queue")}>
+          Queued
+        </button>
+        <button className={view === "log" ? "primary" : ""} onClick={() => setView("log")}>
+          Recently Processed
+        </button>
       </div>
+
+      {view === "queue" && (
+        <div className="panel">
+          <h2>Queue &amp; Status</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Mode</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Size</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status?.jobs.map((j) => (
+                <tr key={j.id}>
+                  <td>{j.source_path.split("/").pop()}</td>
+                  <td>{j.mode}</td>
+                  <td><span className={`badge ${j.status}`}>{j.status}</span></td>
+                  <td>
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{ width: `${Number(j.progress || 0)}%` }} />
+                    </div>
+                  </td>
+                  <td>
+                    {formatBytes(j.initial_size)}
+                    {j.final_size ? ` → ${formatBytes(j.final_size)}` : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {view === "log" && (
+        <div className="panel">
+          <div className="toolbar">
+            <h2>Conversion Log</h2>
+            <button onClick={pruneLog}>Delete older than 1 week</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Started</th>
+                <th>Finished</th>
+                <th>Duration</th>
+                <th>File</th>
+                <th>Before</th>
+                <th>After</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {log.map((entry, i) => (
+                <tr key={i}>
+                  <td>{new Date(entry.started_at).toLocaleString()}</td>
+                  <td>{entry.finished_at ? new Date(entry.finished_at).toLocaleString() : "-"}</td>
+                  <td>{formatDuration(entry.duration_seconds)}</td>
+                  <td>{entry.filename}</td>
+                  <td>{formatBytes(entry.initial_size)}</td>
+                  <td>{entry.final_size ? formatBytes(entry.final_size) : "-"}</td>
+                  <td><span className={`badge ${entry.status}`}>{entry.status}</span></td>
+                  <td>
+                    <button onClick={() => removeLogEntry(entry.started_at)}>Remove</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

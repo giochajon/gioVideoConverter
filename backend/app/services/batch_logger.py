@@ -59,5 +59,26 @@ def remove_entry(started_at: str) -> bool:
     return removed
 
 
+def remove_older_than(cutoff_iso: str) -> int:
+    """Remove all log entries with started_at before cutoff_iso. Returns count removed."""
+    if not os.path.exists(_LOG_PATH):
+        return 0
+    cutoff = datetime.fromisoformat(cutoff_iso)
+    with open(_LOG_PATH) as f:
+        lines = f.readlines()
+    kept = []
+    removed = 0
+    for line in lines:
+        entry = json.loads(line)
+        if datetime.fromisoformat(entry["started_at"]) < cutoff:
+            removed += 1
+            continue
+        kept.append(line)
+    if removed:
+        with open(_LOG_PATH, "w") as f:
+            f.writelines(kept)
+    return removed
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
