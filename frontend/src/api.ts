@@ -112,6 +112,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ started_at: startedAt }),
     }).then((r) => json(r)),
+  pruneBatchLog: () =>
+    fetch("/api/batch/log/prune", { method: "POST" }).then((r) => json<{ removed: number }>(r)),
 };
 
 export function formatBytes(bytes?: string | number): string {

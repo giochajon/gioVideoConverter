@@ -54,6 +54,12 @@ export default function Batch() {
     load();
   }
 
+  async function pruneLog() {
+    if (!confirm("Delete all log entries older than one week?")) return;
+    await api.pruneBatchLog();
+    load();
+  }
+
   if (!settings) return <p>Loading...</p>;
 
   return (
@@ -142,7 +148,10 @@ export default function Batch() {
 
       {view === "log" && (
         <div className="panel">
-          <h2>Conversion Log</h2>
+          <div className="toolbar">
+            <h2>Conversion Log</h2>
+            <button onClick={pruneLog}>Delete older than 1 week</button>
+          </div>
           <table>
             <thead>
               <tr>

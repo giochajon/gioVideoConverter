@@ -156,6 +156,24 @@ after everything above had already been verified once.
     `POST /api/batch/log/remove` (`batch_logger.remove_entry`, matched by the entry's
     unique `started_at`).
 
+## Features added (third round)
+
+13. **"Recently Processed" log view added to the Interactive page** — previously only
+    `/batch` had the Queued/Recently Processed toggle; the Interactive page only showed
+    a live queue table with no way to see history. Since `batch_logger` already records
+    every finished job regardless of mode (see bug #10 above), this was a pure frontend
+    addition: Interactive now has the same Queued/Recently Processed toggle, reusing the
+    existing `/api/batch/log` and `/api/batch/log/remove` endpoints.
+14. **Bulk-delete old log entries** — added a "Delete older than 1 week" button to the
+    Conversion Log on both pages, backed by a new `batch_logger.remove_older_than()`
+    and `POST /api/batch/log/prune` endpoint (cutoff hardcoded to 7 days, matching the
+    request — no configurable retention window was asked for).
+15. **Unreadable purple links on Interactive page** — the breadcrumb and folder-listing
+    links (`.breadcrumb a`, `.dir-row a`) had no explicit color, so the browser's default
+    *visited-link* purple rendered against the dark background (`#12141a`) and was hard
+    to read. Fixed by giving both an explicit light-blue color (`#60a5fa`) for both
+    unvisited and visited states.
+
 ## Known limitations (not bugs, just current scope)
 
 - Series batch rotation only considers shows organized with a `Season NN` subfolder;
@@ -206,6 +224,17 @@ after everything above had already been verified once.
   targeted item.
 - Frontend: `tsc -b && vite build` and the full Docker image build both succeed with
   no errors.
+
+### Third round (features 13–15 above)
+
+- Frontend: `tsc -b && vite build` succeeds with no errors (verified in a disposable
+  `node:20-alpine` container since this host has no local `npm`).
+- Backend: `batch_logger.py` and `routers/batch.py` syntax-checked; the prune endpoint
+  reuses the same JSONL read/rewrite pattern already proven correct by `remove_entry`.
+- Not yet re-verified live against the running container after this round of changes —
+  do a smoke test after deploying (Interactive → Recently Processed tab renders the
+  log; "Delete older than 1 week" actually removes only entries with `started_at`
+  older than 7 days; breadcrumb/folder links are legible on the dark background).
 
 ## Current live state (informational — will drift over time)
 

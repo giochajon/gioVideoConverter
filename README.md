@@ -19,7 +19,9 @@ Redis. Frontend: React, served on port 9095.
   folder's read/write permissions are checked live and surfaced as a warning if
   something's misconfigured. Status is stored in Redis so it survives page
   navigation/reloads. The red **STOP ALL** button kills any in-flight conversion and
-  clears the interactive queue.
+  clears the interactive queue. Like Batch, a toggle switches between **Queued** (live
+  job status/progress) and **Recently Processed** (the conversion log, same log Batch
+  writes to since every finished job — interactive or batch — is recorded there).
 - **Batch** (`/batch`) — disabled by default. Enable for either Movies (top 5 files over
   1.5GB in `MOVIE_DIR`) or Series (largest `Season NN` folder found anywhere under
   `SERIES_DIR`, one season per night, rotating through folders already converted) —
@@ -27,9 +29,10 @@ Redis. Frontend: React, served on port 9095.
   `TZ`, default `America/Denver`; change it from Settings — takes effect immediately,
   no restart needed). A toggle switches between **Queued** (what's waiting to be
   processed, with a "Remove" button per item) and **Recently Processed** (the
-  conversion log, also removable per entry) — the two are never shown mixed together.
-  The nightly scan never re-queues a file that's already queued/running elsewhere, or
-  one that's already been converted (identified by its `[<preset name>]` tag).
+  conversion log, removable per entry, plus a "Delete older than 1 week" button to
+  bulk-prune old entries) — the two are never shown mixed together. The nightly scan
+  never re-queues a file that's already queued/running elsewhere, or one that's
+  already been converted (identified by its `[<preset name>]` tag).
 - **Settings** (`/settings`) — choose the HandBrake preset (default `Fast 720p30`) and
   the nightly batch start/stop time; configured folders are shown read-only (set via
   `.env`).
