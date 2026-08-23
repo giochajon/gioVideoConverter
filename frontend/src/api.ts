@@ -114,6 +114,8 @@ export const api = {
     }).then((r) => json(r)),
   pruneBatchLog: () =>
     fetch("/api/batch/log/prune", { method: "POST" }).then((r) => json<{ removed: number }>(r)),
+  recalculateBatch: () =>
+    fetch("/api/batch/recalculate", { method: "POST" }).then((r) => json<{ queued: number }>(r)),
 };
 
 export function formatBytes(bytes?: string | number): string {

@@ -39,6 +39,12 @@ async def tonight():
     return {"queued": False, "jobs": preview}
 
 
+@router.post("/recalculate")
+async def recalculate():
+    queued = await scheduler.recalculate_batch_queue()
+    return {"queued": queued}
+
+
 @router.delete("/queue/{job_id}")
 async def remove_queue_item(job_id: str):
     ok = await queue_manager.remove_batch_job(job_id)

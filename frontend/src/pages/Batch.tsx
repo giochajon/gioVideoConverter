@@ -60,6 +60,12 @@ export default function Batch() {
     load();
   }
 
+  async function recalculate() {
+    if (!confirm("Clear the current batch queue and rebuild it from what's on disk right now?")) return;
+    await api.recalculateBatch();
+    load();
+  }
+
   if (!settings) return <p>Loading...</p>;
 
   return (
@@ -110,7 +116,10 @@ export default function Batch() {
 
       {view === "queue" && (
         <div className="panel">
-          <h2>Tonight's Queue</h2>
+          <div className="toolbar">
+            <h2>Tonight's Queue</h2>
+            <button onClick={recalculate}>Recalculate Queue</button>
+          </div>
           {tonight.length === 0 && <p style={{ color: "#9aa4b2" }}>Nothing queued yet.</p>}
           {tonight.length > 0 && !tonightQueued && (
             <p style={{ color: "#9aa4b2", fontSize: "0.85rem" }}>
