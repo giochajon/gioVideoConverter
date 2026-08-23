@@ -59,6 +59,22 @@ async def preview_series_batch() -> list:
     return scanner.episodes_of(season_path)
 
 
+async def recalculate_batch_queue() -> int:
+    """Manually rebuild the batch queue from a fresh filesystem scan. Drops any
+    stale entries (e.g. files that vanished when a share got remounted) and
+    clears a halt, then re-applies the current target so the queue reflects
+    what's actually on disk right now."""
+    current = await queue_manager.get_settings()
+    await queue_manager.clear_batch_queue()
+    await queue_manager.resume()
+    if current["batch_target"] == "movies":
+        await _build_movie_batch()
+    elif current["batch_target"] == "series":
+        await _build_series_batch()
+    status = await queue_manager.get_status()
+    return status["queue_batch_len"]
+
+
 async def build_tonight_queue() -> None:
     current = await queue_manager.get_settings()
     if not current["batch_enabled"]:

@@ -47,17 +47,6 @@ def top_movies_over_threshold(count: int, min_size: int) -> list[FileEntry]:
     return movies[:count]
 
 
-def _dir_size(path: str) -> int:
-    total = 0
-    for dirpath, _dirnames, filenames in os.walk(path):
-        for name in filenames:
-            try:
-                total += os.path.getsize(os.path.join(dirpath, name))
-            except OSError:
-                pass
-    return total
-
-
 _SEASON_RE = re.compile(r"^season\s*\d+", re.IGNORECASE)
 
 
@@ -75,14 +64,6 @@ def list_season_dirs(root: str | None = None) -> list[str]:
             if is_season_dir(name):
                 seasons.append(os.path.join(dirpath, name))
     return seasons
-
-
-def largest_season_dir(root: str | None = None, exclude: set[str] | None = None) -> str | None:
-    exclude = exclude or set()
-    candidates = [s for s in list_season_dirs(root) if s not in exclude]
-    if not candidates:
-        return None
-    return max(candidates, key=_dir_size)
 
 
 def episodes_of(season_path: str) -> list[FileEntry]:
@@ -103,3 +84,21 @@ def episodes_of(season_path: str) -> list[FileEntry]:
                 continue
             entries.append(FileEntry(path=fpath, name=fname, size=size))
     return entries
+
+
+def _average_episode_size(season_path: str) -> float:
+    entries = episodes_of(season_path)
+    return (sum(e.size for e in entries) / len(entries)) if entries else 0.0
+
+
+def largest_season_dir(root: str | None = None, exclude: set[str] | None = None) -> str | None:
+    """Pick the season with the biggest average remaining-episode size, not the
+    biggest total folder size - a season with many small episodes (e.g. a
+    60-episode telenovela) would otherwise outrank one with a handful of much
+    larger files, even though the latter has more to gain from conversion."""
+    exclude = exclude or set()
+    candidates = [s for s in list_season_dirs(root) if s not in exclude]
+    candidates = [s for s in candidates if _average_episode_size(s) > 0]
+    if not candidates:
+        return None
+    return max(candidates, key=_average_episode_size)

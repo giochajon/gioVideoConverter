@@ -182,6 +182,16 @@ async def remove_batch_job(job_id: str) -> bool:
     return bool(removed)
 
 
+async def clear_batch_queue() -> int:
+    """Drop every queued (not yet running) batch job and its hash - used to wipe
+    out stale entries (e.g. left over from a remounted share) before a rebuild."""
+    job_ids = await _redis.lrange(QUEUE_BATCH, 0, -1)
+    if job_ids:
+        await _redis.delete(*[f"job:{job_id}" for job_id in job_ids])
+    await _redis.delete(QUEUE_BATCH)
+    return len(job_ids)
+
+
 async def get_status() -> dict:
     ids = await _redis.lrange(JOB_IDS_KEY, 0, 199)
     jobs = []
