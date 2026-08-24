@@ -1,3 +1,5 @@
+import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
@@ -7,6 +9,12 @@ from ..models import RemoveLogEntryRequest
 from ..services import batch_logger, queue_manager, scanner, scheduler
 
 router = APIRouter(prefix="/api/batch", tags=["batch"])
+
+# The preview scan below walks the whole movie/series library over the network
+# share, which can take several seconds - caching it means the Batch page's
+# 5-second poll doesn't re-trigger that scan on every tick.
+_PREVIEW_TTL_SECONDS = 30
+_preview_cache: dict = {"at": 0.0, "target": None, "entries": []}
 
 
 @router.get("/tonight")
@@ -28,12 +36,20 @@ async def tonight():
     if not current["batch_enabled"]:
         return {"queued": False, "jobs": []}
 
-    if current["batch_target"] == "movies":
-        entries = scanner.top_movies_over_threshold(settings.movie_batch_count, settings.movie_min_size_bytes)
-    elif current["batch_target"] == "series":
-        entries = await scheduler.preview_series_batch()
+    target = current["batch_target"]
+    now = time.monotonic()
+    if target == _preview_cache["target"] and now - _preview_cache["at"] < _PREVIEW_TTL_SECONDS:
+        entries = _preview_cache["entries"]
     else:
-        entries = []
+        if target == "movies":
+            entries = await asyncio.to_thread(
+                scanner.top_movies_over_threshold, settings.movie_batch_count, settings.movie_min_size_bytes
+            )
+        elif target == "series":
+            entries = await scheduler.preview_series_batch()
+        else:
+            entries = []
+        _preview_cache.update(at=now, target=target, entries=entries)
 
     preview = [{"source_path": e.path, "initial_size": str(e.size), "status": "preview"} for e in entries]
     return {"queued": False, "jobs": preview}
