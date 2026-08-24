@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -16,7 +17,9 @@ _scheduler: AsyncIOScheduler | None = None
 
 async def _build_movie_batch() -> None:
     current = await queue_manager.get_settings()
-    entries = scanner.top_movies_over_threshold(settings.movie_batch_count, settings.movie_min_size_bytes)
+    entries = await asyncio.to_thread(
+        scanner.top_movies_over_threshold, settings.movie_batch_count, settings.movie_min_size_bytes
+    )
     if entries:
         await queue_manager.enqueue_batch([e.path for e in entries], current["preset"])
         logger.info("Queued %d movie(s) for nightly batch", len(entries))
@@ -27,15 +30,15 @@ async def _build_series_batch() -> None:
     redis_client = await queue_manager.get_redis()
     processed = await redis_client.smembers(SERIES_PROGRESS_KEY)
 
-    season_path = scanner.largest_season_dir(exclude=processed)
+    season_path = await asyncio.to_thread(scanner.largest_season_dir, exclude=processed)
     if not season_path:
         # every known season has been converted already; start a fresh rotation
         await redis_client.delete(SERIES_PROGRESS_KEY)
-        season_path = scanner.largest_season_dir()
+        season_path = await asyncio.to_thread(scanner.largest_season_dir)
         if not season_path:
             return
 
-    episodes = scanner.episodes_of(season_path)
+    episodes = await asyncio.to_thread(scanner.episodes_of, season_path)
     if not episodes:
         # nothing matches SxxExx here (e.g. an "Extras" folder) - don't retry it every night
         logger.warning("season %s has no matching episode files, skipping", season_path)
@@ -51,12 +54,12 @@ async def preview_series_batch() -> list:
     """Read-only preview of what the next series batch run would pick, with no side effects."""
     redis_client = await queue_manager.get_redis()
     processed = await redis_client.smembers(SERIES_PROGRESS_KEY)
-    season_path = scanner.largest_season_dir(exclude=processed)
+    season_path = await asyncio.to_thread(scanner.largest_season_dir, exclude=processed)
     if not season_path:
-        season_path = scanner.largest_season_dir()
+        season_path = await asyncio.to_thread(scanner.largest_season_dir)
     if not season_path:
         return []
-    return scanner.episodes_of(season_path)
+    return await asyncio.to_thread(scanner.episodes_of, season_path)
 
 
 async def recalculate_batch_queue() -> int:
